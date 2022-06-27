@@ -176,6 +176,41 @@ app.post('/status', async (req, res) => {
     }
 });
 
+/* ------------- Automatic Inactive Participant Removal ------------ */
+
+setInterval(async () => {
+    try {
+        const mongoClient = new MongoClient(process.env.MONGO_URI)
+        await mongoClient.connect()
+
+        const lastTenSeconds = Date.now() - 10000;
+        const participantsCollection = mongoClient.db('bate-papo-uol').collection('participants');
+        const messagesCollection = mongoClient.db('bate-papo-uol').collection('messages');
+        const participants = await participantsCollection.find().toArray();
+        const inactiveParticipants = participants.filter(participant => participant.lastStatus <=lastTenSeconds);
+        if(inactiveParticipants.length === 0){
+        mongoClient.close();
+        return;
+        }
+
+        await participantsCollection.deleteMany({lastStatus: {$lte: lastTenSeconds}});
+
+        const inactiveParticipantsMessage = inactiveParticipants.map(participant => {
+            return {
+                from: participant.name, 
+                to: 'Todos', 
+                text: 'sai da sala...', 
+                type: 'status', 
+                time: dayjs().format('HH:mm:ss')}
+        });
+
+        await messagesCollection.insertMany([inactiveParticipantsMessage])
+
+        mongoClient.close();
+    } catch (error) {
+        console.log(error);
+    }
+},15000);
 
 app.listen(5000, () => {
   console.log('Server is running on port 5000');
